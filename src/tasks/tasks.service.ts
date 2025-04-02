@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Task } from '../entities/task.entity';
 import { Repository } from 'typeorm';
@@ -10,26 +10,41 @@ export class TasksService {
         private readonly tasksRepository: Repository<Task>,
     ) {}
 
-    async listTasks() {
-        const tasks = await this.tasksRepository.find();
+    async listTasks(ownerId: string) {
+        const tasks = await this.tasksRepository
+            .createQueryBuilder('task')
+            .where('task.ownerId = :ownerId', { ownerId })
+
+            .getMany();
 
         return tasks;
     }
 
-    async getTask(id: string) {
+    async getTask(taskId: string, ownerId: string) {
         const task = await this.tasksRepository
             .createQueryBuilder('task')
-            .where(`task.id = "${id}"`)
+            .where('task.ownerId = :ownerId', { ownerId })
+            .andWhere('task.id = :taskId', { taskId })
             .getOne();
-
+        if (!task) {
+            throw new NotFoundException(
+                'Tarea no encontrada o no tienes permisos para verla',
+            );
+        }
         return task;
     }
 
-    async editTask(body: any) {
+    async editTask(body: any, ownerId: string) {
+        const existingTask = await this.getTask(body.id, ownerId);
+
+        if (!existingTask) {
+            throw new NotFoundException(
+                'Tarea no encontrada o no tienes permisos para editarla',
+            );
+        }
+
         await this.tasksRepository.update(body.id, body);
 
-        const editedTask = await this.getTask(body.id);
-
-        return editedTask;
+        return await this.getTask(body.id, ownerId);
     }
 }

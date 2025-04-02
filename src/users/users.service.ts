@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { ConflictException, Injectable, InternalServerErrorException, Logger } from '@nestjs/common';
+import { QueryFailedError, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
+import { CreateUserDto } from 'src/dto/create-user.dto';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
@@ -11,15 +13,23 @@ export class UsersService {
         private readonly usersRepository: Repository<User>,
     ) {}
 
-    async create(body: any) {
-        const user = new User();
-        user.email = body.email;
-        user.pass = body.password;
-        user.fullname = body.fullname;
+    async create(createUserDto: CreateUserDto) {
+        try {
+            const { pass, ...userData } = createUserDto;
+            const user = this.usersRepository.create({
+                ...userData,
+                pass: bcrypt.hashSync(pass, 10),
+            });
 
-        await this.usersRepository.save(user);
-
-        return user;
+            await this.usersRepository.save(user);
+            delete user.pass;
+            return user;
+        } catch (error) {
+            if (error instanceof QueryFailedError && error.message.includes('UNIQUE constraint failed: users.fullname')) {
+                throw new ConflictException('El email de usuario ya está en uso.');
+            }
+            throw InternalServerErrorException;
+        }
     }
 
     async findOne(email: string) {
